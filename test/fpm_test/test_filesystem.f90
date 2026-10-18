@@ -2,7 +2,7 @@ module test_filesystem
     use testsuite, only: new_unittest, unittest_t, error_t, test_failed
     use fpm_filesystem, only: canon_path, is_dir, mkdir, os_delete_dir, &
                               join_path, is_absolute_path, get_home, &
-                              delete_file, read_lines, get_temp_filename
+                              delete_file, read_lines, read_lines_expanded, get_temp_filename
     use fpm_environment, only: OS_WINDOWS, get_os_type, os_is_unix
     use fpm_strings, only: string_t, split_lines_first_last
     implicit none
@@ -24,10 +24,48 @@ contains
             & new_unittest("test-is-absolute-path", test_is_absolute_path), &
             & new_unittest("test-get-home", test_get_home), &
             & new_unittest("test-split-lines-first-last", test_split_lines_first_last), &
-            & new_unittest("test-crlf-lines", test_dir_with_crlf) &
+            & new_unittest("test-crlf-lines", test_dir_with_crlf), &
+            & new_unittest("empty-file-closes-unit", test_empty_file_closes_unit) &
             ]
 
     end subroutine collect_filesystem
+
+    !> Both line readers return no lines and release an empty file's unit.
+    subroutine test_empty_file_closes_unit(error)
+        type(error_t), allocatable, intent(out) :: error
+        type(string_t), allocatable :: lines(:)
+        character(len=:), allocatable :: temp_file
+        integer :: unit, io_status, reader, leaked_unit
+        logical :: opened
+
+        temp_file = get_temp_filename()
+        open(newunit=unit, file=temp_file, status="new", action="write", iostat=io_status)
+        if (io_status /= 0) then
+            call test_failed(error, "Cannot create empty reader fixture")
+            return
+        end if
+        close(unit)
+
+        do reader = 1, 2
+            if (reader == 1) then
+                lines = read_lines(temp_file)
+            else
+                lines = read_lines_expanded(temp_file)
+            end if
+            inquire(file=temp_file, opened=opened, number=leaked_unit)
+            if (opened) then
+                close(leaked_unit, status="delete")
+                call test_failed(error, "Reading an empty file left its unit open")
+                return
+            end if
+            if (size(lines) /= 0) then
+                call delete_file(temp_file)
+                call test_failed(error, "Reading an empty file returned nonempty lines")
+                return
+            end if
+        end do
+        call delete_file(temp_file)
+    end subroutine test_empty_file_closes_unit
 
     subroutine test_canon_path(error)
 

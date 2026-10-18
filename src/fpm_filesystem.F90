@@ -363,8 +363,7 @@ function read_text_file(filename) result(string)
             access='stream', form='unformatted')
     inquire (fh, size=length)
     allocate (character(len=length) :: string)
-    if (length == 0) return
-    read (fh) string
+    if (length > 0) read (fh) string
     close (fh)
 
 end function read_text_file
